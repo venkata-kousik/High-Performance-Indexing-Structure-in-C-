@@ -1,0 +1,65 @@
+name: "CodeQL Security Analysis"
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+  schedule:
+    - cron: '30 1 * * 0'  # Weekly on Sundays
+
+jobs:
+  analyze:
+    name: Analyze Code
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [ 'cpp' ]
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v2
+      with:
+        languages: ${{ matrix.language }}
+        queries: security-extended,security-and-quality
+
+    - name: Setup Build Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential
+
+    - name: Build Project
+      run: |
+        echo "Setting up build environment..."
+        mkdir -p DBFiles
+        
+        echo "Checking for Makefile..."
+        if [ -f "Makefile" ]; then
+          echo "✅ Makefile found"
+          echo "Force clean build..."
+          rm -f src/*.o examples/*.o bptree_demo basic_usage 2>/dev/null || true
+          echo "Building project..."
+          make clean || echo "Clean failed, continuing..."
+          make all
+        else
+          echo "❌ Makefile not found, using direct compilation..."
+          g++ -std=c++17 -Wall -Wextra -g -Iinclude -o bptree_demo src/*.cpp
+          g++ -std=c++17 -Wall -Wextra -g -Iinclude -o basic_usage src/display.cpp src/insertion.cpp src/removal.cpp src/search.cpp src/utils.cpp examples/basic_usage.cpp
+        fi
+        
+        echo "Verifying build results..."
+        ls -la bptree_demo basic_usage || echo "Some executables missing"
+
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v2
+      with:
+        category: "/language:${{matrix.language}}"
